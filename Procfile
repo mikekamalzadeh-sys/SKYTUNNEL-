@@ -1,1 +1,1 @@
-web: python bot-9.py
+web: python run_all.py

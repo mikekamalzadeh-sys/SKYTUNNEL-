@@ -10,9 +10,9 @@ BASE_URL = "https://api.splus.ir/bot" + TOKEN
 CONFIG_API = os.getenv("CONFIG_API", "https://su.randomatic.ir/api/v1/configs")
 CONFIG_KEY = os.getenv("CONFIG_KEY", "sk_live_azIaKWpOvQDoD2-7vX8-yyf3WNPg6U1p")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "48198481"))
-PRICE_PER_GB = int(os.getenv("PRICE_PER_GB", "4000"))
+PRICE_PER_GB = int(os.getenv("PRICE_PER_GB", "3000"))
 CARD_NUMBER = os.getenv("CARD_NUMBER", "6219861957006504")
-CARD_OWNER = os.getenv("CARD_OWNER", "رهام کمالزاده")
+CARD_OWNER = os.getenv("CARD_OWNER", "کمالزاده")
 MIN_TOPUP = int(os.getenv("MIN_TOPUP", "10000"))
 
 DIVIDER = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
@@ -61,6 +61,14 @@ def init_db():
         created_at TEXT
     )''')
     c.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)')
+    c.execute('''CREATE TABLE IF NOT EXISTS discount_codes (
+        code TEXT PRIMARY KEY,
+        percent INTEGER,
+        max_uses INTEGER,
+        used_count INTEGER DEFAULT 0,
+        active INTEGER DEFAULT 1,
+        created_at TEXT
+    )''')
     for statement in (
         'ALTER TABLE users ADD COLUMN username TEXT',
         'ALTER TABLE users ADD COLUMN first_name TEXT',
@@ -247,6 +255,37 @@ def update_ticket_status(ticket_id, status, admin_reply=None):
     conn.close()
 
 
+def get_discount_code(code):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT code, percent, max_uses, used_count, active FROM discount_codes WHERE code=?',
+              (code.strip().upper(),))
+    res = c.fetchone()
+    conn.close()
+    return res
+
+
+def increment_discount_usage(code):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('UPDATE discount_codes SET used_count = used_count + 1 WHERE code=?', (code.strip().upper(),))
+    conn.commit()
+    conn.close()
+
+
+def validate_discount_code(code):
+    """برمی‌گرداند: (ok: bool, percent یا پیام خطا)"""
+    row = get_discount_code(code)
+    if not row:
+        return False, '❌ کد تخفیف نامعتبر است.'
+    _, percent, max_uses, used_count, active = row
+    if active != 1:
+        return False, '⛔ این کد تخفیف غیرفعال شده است.'
+    if used_count >= max_uses:
+        return False, '⚠️ ظرفیت استفاده از این کد تخفیف تمام شده است.'
+    return True, percent
+
+
 def get_setting(key, default='1'):
     conn = get_conn()
     c = conn.cursor()
@@ -355,7 +394,7 @@ def main_menu(chat_id, note=None):
     }
     text = (
         '✨ <b>به ربات فروش خوش آمدید</b>\n' + DIVIDER + '\n'
-        '💎 قیمت هر گیگابایت: <b>' + f'{PRICE_PER_GB:,}' + '</b> تومان\n'
+        '💎 نرخ هر گیگابایت: <b>' + f'{PRICE_PER_GB:,}' + '</b> تومان\n'
         '💳 موجودی کیف پول: <b>' + f'{wallet:,}' + '</b> تومان'
     )
     if note:
@@ -414,19 +453,49 @@ while True:
                                 if res['success'] and res['sub_url']:
                                     update_wallet_db(chat_id, -price)
                                     save_user_config(chat_id, res['sub_url'], res['config_id'], gb, label, days, price)
+                                    if s.get('discount_code'):
+                                        increment_discount_usage(s['discount_code'])
                                     success_text = (
                                         '🎉 <b>کانفیگ شما با موفقیت ساخته شد</b>\n' + DIVIDER + '\n'
                                         '📶 حجم: <b>' + str(gb) + '</b> گیگابایت\n'
                                         '🏷 نام: <b>' + str(label) + '</b>\n'
                                         '⏳ مدت اعتبار: <b>' + str(days) + '</b> روز\n'
                                         '💵 قیمت: <b>' + f'{price:,}' + '</b> تومان\n' + DIVIDER + '\n'
-                                        '🔗 لینک سابسکرایبیشن:\n<code>' + str(res['sub_url']) + '</code>'
+                                        '🔗 لینک سابسکریپشن:\n<code>' + str(res['sub_url']) + '</code>'
                                     )
                                     send_message(chat_id, success_text)
                                 else:
                                     send_message(chat_id, '❌ خطا در ارتباط با سرور پنل. لطفاً دوباره تلاش کنید.')
                             user_steps[str(chat_id)] = {}
                             main_menu(chat_id)
+                        else:
+                            main_menu(chat_id)
+
+                    elif data == 'skip_discount':
+                        s = user_steps.get(str(chat_id), {})
+                        if s.get('step') == 'ask_discount':
+                            gb, days, label, price = s['gb'], s['days'], s['label'], s['price']
+                            user_steps[str(chat_id)] = {
+                                'step': 'confirm_buy',
+                                'gb': gb,
+                                'days': days,
+                                'price': price,
+                                'label': label
+                            }
+                            confirm_text = (
+                                '🧾 <b>تایید نهایی خرید</b>\n' + DIVIDER + '\n'
+                                '📶 حجم: <b>' + str(gb) + '</b> گیگابایت\n'
+                                '🏷 نام: <b>' + str(label) + '</b>\n'
+                                '⏳ مدت اعتبار: <b>' + str(days) + '</b> روز\n'
+                                '💵 قیمت: <b>' + f'{price:,}' + '</b> تومان'
+                            )
+                            confirm_kb = {
+                                'inline_keyboard': [[
+                                    {'text': '✅ تایید و پرداخت', 'callback_data': 'confirm_purchase'},
+                                    {'text': '❌ انصراف', 'callback_data': 'cancel_purchase'}
+                                ]]
+                            }
+                            send_message(chat_id, confirm_text, reply_markup=confirm_kb)
                         else:
                             main_menu(chat_id)
 
@@ -474,246 +543,4 @@ while True:
                 # ------------------------------------------------------------------
                 elif 'message' in update:
                     message = update['message']
-                    chat_id = message['chat']['id']
-                    text = message.get('text', '')
-                    step = user_steps.get(str(chat_id), {})
-
-                    sender = message.get('from', {}) or {}
-                    upsert_user_info(chat_id, sender.get('username'), sender.get('first_name'))
-
-                    if text == '/start':
-                        add_user(chat_id)
-                        user_steps[str(chat_id)] = {}
-                        main_menu(chat_id)
-
-                    elif text == '🛍 خرید کانفیگ':
-                        if not is_feature_enabled('buy'):
-                            send_message(chat_id, DISABLED_TEXT)
-                            continue
-                        wallet = get_wallet_db(chat_id)
-                        if wallet < PRICE_PER_GB:
-                            send_message(chat_id, '⚠️ موجودی کافی نیست.\n💳 موجودی فعلی: <b>' + f'{wallet:,}' + '</b> تومان')
-                        else:
-                            user_steps[str(chat_id)] = {'step': 'ask_gb'}
-                            send_message(
-                                chat_id,
-                                '📶 چند گیگابایت نیاز دارید؟\n(هر گیگابایت <b>' + f'{PRICE_PER_GB:,}' + '</b> تومان)\n'
-                                '💳 موجودی فعلی: <b>' + f'{wallet:,}' + '</b> تومان\n\n'
-                                'فقط عدد حجم را ارسال کنید:'
-                            )
-
-                    elif text == '💠 شارژ کیف پول':
-                        if not is_feature_enabled('topup'):
-                            send_message(chat_id, DISABLED_TEXT)
-                            continue
-                        user_steps[str(chat_id)] = {'step': 'ask_topup_amount'}
-                        send_message(
-                            chat_id,
-                            '💠 مبلغ مورد نظر برای شارژ کیف پول را به تومان وارد کنید.\n'
-                            'حداقل مبلغ شارژ: <b>' + f'{MIN_TOPUP:,}' + '</b> تومان'
-                        )
-
-                    elif text == '🧪 تست رایگان':
-                        if not is_feature_enabled('trial'):
-                            send_message(chat_id, DISABLED_TEXT)
-                            continue
-                        if check_free_trial(chat_id) > 0:
-                            send_message(chat_id, '⚠️ شما پیش‌تر از تست رایگان استفاده کرده‌اید.')
-                        else:
-                            send_message(chat_id, '⏳ در حال ساخت کانفیگ تست...')
-                            res = make_config(0.1, 'تست رایگان', 1)
-                            if res['success'] and res['sub_url']:
-                                set_free_trial(chat_id)
-                                save_user_config(chat_id, res['sub_url'], res['config_id'], 0.1, 'تست رایگان', 1, 0)
-                                trial_text = (
-                                    '🎁 <b>کانفیگ تست رایگان شما آماده شد</b>\n' + DIVIDER + '\n'
-                                    '📶 حجم: <b>0.1</b> گیگابایت\n'
-                                    '⏳ مدت اعتبار: <b>1</b> روز\n' + DIVIDER + '\n'
-                                    '🔗 لینک سابسکریپشن:\n<code>' + str(res['sub_url']) + '</code>'
-                                )
-                                send_message(chat_id, trial_text)
-                            else:
-                                send_message(chat_id, '❌ خطا در ساخت کانفیگ تست. لطفاً بعداً دوباره تلاش کنید.')
-
-                    elif text == '👤 حساب من':
-                        wallet = get_wallet_db(chat_id)
-                        tg, tp = get_total_purchases(chat_id)
-                        profile_text = (
-                            '👤 <b>حساب کاربری شما</b>\n' + DIVIDER + '\n'
-                            '🆔 شناسه: <code>' + str(chat_id) + '</code>\n'
-                            '💳 موجودی کیف پول: <b>' + f'{wallet:,}' + '</b> تومان\n'
-                            '📊 مجموع خرید: <b>' + f'{tg:,.1f}' + '</b> گیگابایت\n'
-                            '💵 مجموع پرداختی: <b>' + f'{tp:,.0f}' + '</b> تومان'
-                        )
-                        send_message(chat_id, profile_text)
-
-                    elif text == '🗂 کانفیگ‌های من':
-                        configs = get_user_configs(chat_id)
-                        if configs:
-                            txt = '🗂 <b>لیست کانفیگ‌های شما</b>\n' + DIVIDER + '\n\n'
-                            for i, cfg in enumerate(configs, 1):
-                                txt += (
-                                    '<b>' + str(i) + '.</b> ' + str(cfg[4]) + ' — ' + str(cfg[3]) +
-                                    'GB — ' + str(cfg[5]) + ' روز\n<code>' + str(cfg[1]) + '</code>\n\n'
-                                )
-                            send_message(chat_id, txt)
-                        else:
-                            send_message(chat_id, '📭 هنوز هیچ کانفیگی خریداری نکرده‌اید.')
-
-                    elif text == '🗑 حذف کانفیگ':
-                        if not is_feature_enabled('delete_config'):
-                            send_message(chat_id, DISABLED_TEXT)
-                            continue
-                        configs = get_user_configs(chat_id)
-                        if not configs:
-                            send_message(chat_id, '📭 کانفیگی برای حذف وجود ندارد.')
-                        else:
-                            txt = '🗑 شماره ردیف کانفیگ مورد نظر برای حذف را ارسال کنید:\n\n'
-                            for i, cfg in enumerate(configs, 1):
-                                txt += '<b>' + str(i) + '.</b> ' + str(cfg[4]) + ' (' + str(cfg[3]) + 'GB)\n'
-                            send_message(chat_id, txt)
-                            user_steps[str(chat_id)] = {'step': 'waiting_delete_id'}
-
-                    elif text == '🎧 پشتیبانی':
-                        if not is_feature_enabled('support'):
-                            send_message(chat_id, DISABLED_TEXT)
-                            continue
-                        user_steps[str(chat_id)] = {'step': 'support_message'}
-                        send_message(chat_id, '🎧 پیام خود را برای پشتیبانی ارسال کنید:')
-
-                    # ---------------- step-based flows ----------------
-
-                    elif step.get('step') == 'ask_gb':
-                        try:
-                            gb = int(text)
-                            if gb <= 0:
-                                send_message(chat_id, '⚠️ عددی بزرگ‌تر از صفر وارد کنید.')
-                            else:
-                                price = gb * PRICE_PER_GB
-                                wallet = get_wallet_db(chat_id)
-                                if wallet < price:
-                                    send_message(chat_id, '⚠️ موجودی کیف پول کافی نیست. لطفاً ابتدا کیف پول خود را شارژ کنید.')
-                                    user_steps[str(chat_id)] = {}
-                                else:
-                                    user_steps[str(chat_id)] = {'step': 'ask_days', 'gb': gb, 'price': price}
-                                    send_message(chat_id, '⏳ مدت اعتبار کانفیگ چند روز باشد؟ (فقط عدد روز را ارسال کنید)')
-                        except ValueError:
-                            send_message(chat_id, '⚠️ لطفاً فقط عدد وارد کنید.')
-
-                    elif step.get('step') == 'ask_days':
-                        try:
-                            days = int(text)
-                            if days <= 0:
-                                send_message(chat_id, '⚠️ عددی بزرگ‌تر از صفر وارد کنید.')
-                            else:
-                                user_steps[str(chat_id)]['step'] = 'ask_label'
-                                user_steps[str(chat_id)]['days'] = days
-                                send_message(chat_id, '🏷 یک نام دلخواه برای این کانفیگ ارسال کنید:')
-                        except ValueError:
-                            send_message(chat_id, '⚠️ لطفاً فقط عدد وارد کنید.')
-
-                    elif step.get('step') == 'ask_label':
-                        label = text.strip() if text.strip() else ('کاربر-' + str(chat_id))
-                        gb = step['gb']
-                        days = step['days']
-                        price = step['price']
-                        user_steps[str(chat_id)] = {
-                            'step': 'confirm_buy',
-                            'gb': gb,
-                            'days': days,
-                            'price': price,
-                            'label': label
-                        }
-                        confirm_text = (
-                            '🧾 <b>تایید نهایی خرید</b>\n' + DIVIDER + '\n'
-                            '📶 حجم: <b>' + str(gb) + '</b> گیگابایت\n'
-                            '🏷 نام: <b>' + str(label) + '</b>\n'
-                            '⏳ مدت اعتبار: <b>' + str(days) + '</b> روز\n'
-                            '💵 قیمت: <b>' + f'{price:,}' + '</b> تومان'
-                        )
-                        confirm_kb = {
-                            'inline_keyboard': [[
-                                {'text': '✅ تایید و پرداخت', 'callback_data': 'confirm_purchase'},
-                                {'text': '❌ انصراف', 'callback_data': 'cancel_purchase'}
-                            ]]
-                        }
-                        send_message(chat_id, confirm_text, reply_markup=confirm_kb)
-
-                    elif step.get('step') == 'waiting_delete_id':
-                        try:
-                            idx = int(text) - 1
-                            if delete_config_from_db_by_index(chat_id, idx):
-                                send_message(chat_id, '✅ کانفیگ با موفقیت حذف شد.')
-                            else:
-                                send_message(chat_id, '⚠️ شماره ردیف نامعتبر است.')
-                        except ValueError:
-                            send_message(chat_id, '⚠️ لطفاً فقط شماره ردیف را وارد کنید.')
-                        user_steps[str(chat_id)] = {}
-
-                    elif step.get('step') == 'ask_topup_amount':
-                        try:
-                            amount = int(text)
-                            if amount < MIN_TOPUP:
-                                send_message(chat_id, '⚠️ حداقل مبلغ شارژ <b>' + f'{MIN_TOPUP:,}' + '</b> تومان است.')
-                            else:
-                                user_steps[str(chat_id)] = {'step': 'waiting_receipt', 'amount': amount}
-                                card_text = (
-                                    '💳 <b>اطلاعات پرداخت</b>\n' + DIVIDER + '\n'
-                                    '💵 مبلغ: <b>' + f'{amount:,}' + '</b> تومان\n'
-                                    '💳 شماره کارت: <code>' + CARD_NUMBER + '</code>\n'
-                                    '👤 به نام: <b>' + CARD_OWNER + '</b>\n\n'
-                                    '📸 پس از واریز، تصویر رسید را ارسال کنید تا برای بررسی به پشتیبانی ارجاع داده شود.'
-                                )
-                                send_message(chat_id, card_text)
-                        except ValueError:
-                            send_message(chat_id, '⚠️ لطفاً مبلغ را فقط به‌صورت عدد (تومان) وارد کنید.')
-
-                    elif step.get('step') == 'waiting_receipt' and 'photo' in message:
-                        photo_id = message['photo'][-1]['file_id']
-                        amount = step.get('amount')
-                        req_id = create_topup_request(chat_id, amount)
-
-                        send_message(chat_id, '✅ رسید شما دریافت شد و برای بررسی ارسال گردید. پس از تایید، کیف پول شما شارژ خواهد شد.')
-                        user_steps[str(chat_id)] = {}
-                        main_menu(chat_id)
-
-                        admin_caption = (
-                            '💳 <b>درخواست شارژ کیف پول</b>\n' + DIVIDER + '\n'
-                            '👤 کاربر: <code>' + str(chat_id) + '</code>\n'
-                            '💵 مبلغ: <b>' + f'{amount:,}' + '</b> تومان\n'
-                            '🎫 شناسه درخواست: <b>' + str(req_id) + '</b>'
-                        )
-                        admin_kb = {
-                            'inline_keyboard': [[
-                                {'text': '✅ تایید', 'callback_data': 'topup_acc_' + str(req_id)},
-                                {'text': '❌ رد کردن', 'callback_data': 'topup_rej_' + str(req_id)}
-                            ]]
-                        }
-                        send_photo(ADMIN_ID, photo_id, caption=admin_caption, reply_markup=admin_kb)
-
-                    elif step.get('step') == 'waiting_receipt' and 'photo' not in message:
-                        send_message(chat_id, '📸 لطفاً تصویر رسید واریزی را ارسال کنید.')
-
-                    elif step.get('step') == 'support_message':
-                        tid = create_ticket(chat_id, text)
-                        send_message(chat_id, '✅ پیام شما با شناسه تیکت #' + str(tid) + ' برای پشتیبانی ثبت شد و به‌زودی پاسخ داده می‌شود.')
-                        notify_admin_new_ticket(tid, chat_id, text)
-                        user_steps[str(chat_id)] = {}
-
-                    elif step.get('step') == 'admin_reply' and chat_id == ADMIN_ID:
-                        tid = step.get('ticket_id')
-                        ticket = get_ticket(tid)
-                        if ticket:
-                            update_ticket_status(tid, 'answered', text)
-                            send_message(ticket[1], '📩 پاسخ پشتیبانی برای تیکت #' + str(tid) + ':\n\n' + text)
-                            send_message(chat_id, '✅ پاسخ برای کاربر ارسال شد.')
-                        else:
-                            send_message(chat_id, '⚠️ تیکت یافت نشد.')
-                        user_steps[str(chat_id)] = {}
-
-        else:
-            time.sleep(1)
-
-    except Exception as loop_error:
-        print('⚠️ خطای غیرمنتظره در حلقه اصلی:', loop_error)
-        time.sleep(2)
+                    

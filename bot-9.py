@@ -24,11 +24,8 @@ user_steps = {}
 # Database helpers
 # ---------------------------------------------------------------------------
 
-DB_PATH = os.getenv("DB_PATH", "/data/shop_data.db")
-
 def get_conn():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    return sqlite3.connect(DB_PATH)
+    return sqlite3.connect('shop_data.db')
 
 
 def init_db():

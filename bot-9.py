@@ -12,7 +12,7 @@ CONFIG_KEY = os.getenv("CONFIG_KEY", "sk_live_azIaKWpOvQDoD2-7vX8-yyf3WNPg6U1p")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "48198481"))
 PRICE_PER_GB = int(os.getenv("PRICE_PER_GB", "3000"))
 CARD_NUMBER = os.getenv("CARD_NUMBER", "6219861957006504")
-CARD_OWNER = os.getenv("CARD_OWNER", "کمالزاده")
+CARD_OWNER = os.getenv("CARD_OWNER", "رهام کمالزاده")
 MIN_TOPUP = int(os.getenv("MIN_TOPUP", "10000"))
 
 TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL")
@@ -409,7 +409,7 @@ def main_menu(chat_id, note=None):
     }
     text = (
         '✨ <b>به ربات فروش خوش آمدید</b>\n' + DIVIDER + '\n'
-        '💎 نرخ هر گیگابایت: <b>' + f'{PRICE_PER_GB:,}' + '</b> تومان\n'
+        '💎 قیمت هر گیگابایت: <b>' + f'{PRICE_PER_GB:,}' + '</b> تومان\n'
         '💳 موجودی کیف پول: <b>' + f'{wallet:,}' + '</b> تومان'
     )
     if note:
@@ -716,7 +716,7 @@ while True:
                         }
                         send_message(
                             chat_id,
-                            '🎟 اگر کد تخفیف دارید ارسال کنید، در غیر این صورت روی دکمه‌ی زیر بزنید:',
+                            '🎟 درصورتی که کد تخفیف دارید ارسال کنید، در غیر این صورت روی دکمه‌ی زیر بزنید:',
                             reply_markup=discount_kb
                         )
 

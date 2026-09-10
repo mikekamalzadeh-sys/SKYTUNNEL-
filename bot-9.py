@@ -10,9 +10,9 @@ BASE_URL = "https://api.splus.ir/bot" + TOKEN
 CONFIG_API = os.getenv("CONFIG_API", "https://su.randomatic.ir/api/v1/configs")
 CONFIG_KEY = os.getenv("CONFIG_KEY", "sk_live_azIaKWpOvQDoD2-7vX8-yyf3WNPg6U1p")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "48198481"))
-PRICE_PER_GB = int(os.getenv("PRICE_PER_GB", "3500"))
+PRICE_PER_GB = int(os.getenv("PRICE_PER_GB", "4000"))
 CARD_NUMBER = os.getenv("CARD_NUMBER", "6219861957006504")
-CARD_OWNER = os.getenv("CARD_OWNER", "کمالزاده")
+CARD_OWNER = os.getenv("CARD_OWNER", "رهام کمالزاده")
 MIN_TOPUP = int(os.getenv("MIN_TOPUP", "10000"))
 
 DIVIDER = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
@@ -355,7 +355,7 @@ def main_menu(chat_id, note=None):
     }
     text = (
         '✨ <b>به ربات فروش خوش آمدید</b>\n' + DIVIDER + '\n'
-        '💎 نرخ هر گیگابایت: <b>' + f'{PRICE_PER_GB:,}' + '</b> تومان\n'
+        '💎 قیمت هر گیگابایت: <b>' + f'{PRICE_PER_GB:,}' + '</b> تومان\n'
         '💳 موجودی کیف پول: <b>' + f'{wallet:,}' + '</b> تومان'
     )
     if note:
@@ -420,7 +420,7 @@ while True:
                                         '🏷 نام: <b>' + str(label) + '</b>\n'
                                         '⏳ مدت اعتبار: <b>' + str(days) + '</b> روز\n'
                                         '💵 قیمت: <b>' + f'{price:,}' + '</b> تومان\n' + DIVIDER + '\n'
-                                        '🔗 لینک سابسکریپشن:\n<code>' + str(res['sub_url']) + '</code>'
+                                        '🔗 لینک سابسکرایبیشن:\n<code>' + str(res['sub_url']) + '</code>'
                                     )
                                     send_message(chat_id, success_text)
                                 else:
@@ -558,7 +558,7 @@ while True:
                                 )
                             send_message(chat_id, txt)
                         else:
-                            send_message(chat_id, '📭 هنوز هیچ کانفیگی ثبت نکرده‌اید.')
+                            send_message(chat_id, '📭 هنوز هیچ کانفیگی خریداری نکرده‌اید.')
 
                     elif text == '🗑 حذف کانفیگ':
                         if not is_feature_enabled('delete_config'):

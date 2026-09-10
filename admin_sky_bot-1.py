@@ -3,6 +3,7 @@ import sqlite3
 import time
 import os
 import requests
+from datetime import datetime
 
 TOKEN = os.getenv("ADMIN_BOT_TOKEN", "69799798:gwpKKgKLMwVp3kxAdjQwNGwx7ZLq2puNE9A")
 BASE_URL = f"https://api.splus.ir/bot{TOKEN}"
@@ -25,6 +26,14 @@ def init_db():
     conn = get_conn()
     c = conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, wallet INTEGER DEFAULT 0)")
+    c.execute('''CREATE TABLE IF NOT EXISTS discount_codes (
+        code TEXT PRIMARY KEY,
+        percent INTEGER,
+        max_uses INTEGER,
+        used_count INTEGER DEFAULT 0,
+        active INTEGER DEFAULT 1,
+        created_at TEXT
+    )''')
     for statement in (
         "ALTER TABLE users ADD COLUMN username TEXT",
         "ALTER TABLE users ADD COLUMN first_name TEXT",
@@ -51,6 +60,55 @@ def update_wallet(user_id, amount):
     c = conn.cursor()
     c.execute("INSERT OR IGNORE INTO users (user_id, wallet) VALUES (?, ?)", (user_id, 0))
     c.execute("UPDATE users SET wallet = wallet + ? WHERE user_id=?", (amount, user_id))
+    conn.commit()
+    conn.close()
+
+
+def create_discount_code(code, percent, max_uses):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO discount_codes (code, percent, max_uses, used_count, active, created_at) VALUES (?, ?, ?, 0, 1, ?)",
+        (code.strip().upper(), percent, max_uses, datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def code_exists(code):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM discount_codes WHERE code=?", (code.strip().upper(),))
+    res = c.fetchone()
+    conn.close()
+    return res is not None
+
+
+def get_all_discount_codes():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT code, percent, max_uses, used_count, active FROM discount_codes ORDER BY created_at DESC")
+    res = c.fetchall()
+    conn.close()
+    return res
+
+
+def toggle_discount_code(code):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT active FROM discount_codes WHERE code=?", (code,))
+    row = c.fetchone()
+    if row:
+        new_active = 0 if row[0] == 1 else 1
+        c.execute("UPDATE discount_codes SET active=? WHERE code=?", (new_active, code))
+        conn.commit()
+    conn.close()
+
+
+def delete_discount_code(code):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM discount_codes WHERE code=?", (code,))
     conn.commit()
     conn.close()
 
@@ -150,6 +208,7 @@ def main_menu(chat_id, note=None):
             [{"text": "📋 لیست کاربران"}],
             [{"text": "➕ افزایش موجودی"}, {"text": "➖ کاهش موجودی"}],
             [{"text": "🔌 مدیریت قابلیت‌ها"}],
+            [{"text": "🎟 کدهای تخفیف"}],
         ],
         "resize_keyboard": True,
     }
@@ -168,6 +227,45 @@ def features_keyboard():
 
 def send_features_menu(chat_id):
     send_message(chat_id, "مدیریت قابلیت‌های ربات فروش — با لمس هرکدوم وضعیتش عوض می‌شود:", reply_markup=features_keyboard())
+
+
+def discount_codes_menu_keyboard():
+    return {
+        "inline_keyboard": [
+            [{"text": "➕ ساخت کد تخفیف جدید", "callback_data": "new_discount"}],
+            [{"text": "📋 لیست کدهای تخفیف", "callback_data": "list_discounts"}],
+        ]
+    }
+
+
+def send_discount_codes_menu(chat_id):
+    send_message(chat_id, "مدیریت کدهای تخفیف:", reply_markup=discount_codes_menu_keyboard())
+
+
+def discount_codes_list_keyboard():
+    codes = get_all_discount_codes()
+    buttons = []
+    for code, percent, max_uses, used_count, active in codes:
+        status = "✅ فعال" if active == 1 else "⛔ غیرفعال"
+        label = f"{code} | {percent}٪ | {used_count}/{max_uses} | {status}"
+        buttons.append([
+            {"text": label, "callback_data": f"toggle_discount_{code}"},
+            {"text": "🗑", "callback_data": f"delete_discount_{code}"},
+        ])
+    buttons.append([{"text": "🔙 بازگشت", "callback_data": "discount_menu"}])
+    return {"inline_keyboard": buttons}
+
+
+def send_discount_codes_list(chat_id):
+    codes = get_all_discount_codes()
+    if not codes:
+        send_message(chat_id, "هنوز هیچ کد تخفیفی ساخته نشده.", reply_markup=discount_codes_menu_keyboard())
+        return
+    send_message(
+        chat_id,
+        "لیست کدهای تخفیف (روی نام کد بزنید تا فعال/غیرفعال شود، روی 🗑 بزنید تا حذف شود):",
+        reply_markup=discount_codes_list_keyboard(),
+    )
 
 
 def format_users_page(rows, offset, total):
@@ -235,12 +333,32 @@ while True:
                         offset = int(data.split("_")[1])
                         send_users_page(chat_id, offset=offset)
 
+                    elif data.startswith("toggle_discount_"):
+                        code = data[len("toggle_discount_"):]
+                        toggle_discount_code(code)
+                        send_discount_codes_list(chat_id)
+
+                    elif data.startswith("delete_discount_"):
+                        code = data[len("delete_discount_"):]
+                        delete_discount_code(code)
+                        send_discount_codes_list(chat_id)
+
                     elif data.startswith("toggle_"):
                         key = data[len("toggle_"):]
                         if key in FEATURES:
                             current = get_setting(key, "1")
                             set_setting(key, "0" if current == "1" else "1")
                         send_features_menu(chat_id)
+
+                    elif data == "discount_menu":
+                        send_discount_codes_menu(chat_id)
+
+                    elif data == "list_discounts":
+                        send_discount_codes_list(chat_id)
+
+                    elif data == "new_discount":
+                        admin_steps[str(chat_id)] = {"step": "ask_discount_code"}
+                        send_message(chat_id, "نام کد تخفیف را وارد کنید (مثلاً OFF20):\n(برای انصراف بنویس «لغو»)")
 
                 # ------------------------- پیام‌های متنی -------------------------
                 elif "message" in update:
@@ -264,6 +382,9 @@ while True:
                     elif text == "🔌 مدیریت قابلیت‌ها":
                         send_features_menu(chat_id)
 
+                    elif text == "🎟 کدهای تخفیف":
+                        send_discount_codes_menu(chat_id)
+
                     elif text == "➕ افزایش موجودی":
                         admin_steps[str(chat_id)] = {"step": "ask_id", "sign": 1}
                         send_message(chat_id, "آیدی عددی کاربر را ارسال کنید:\n(برای انصراف بنویس «لغو»)")
@@ -271,6 +392,49 @@ while True:
                     elif text == "➖ کاهش موجودی":
                         admin_steps[str(chat_id)] = {"step": "ask_id", "sign": -1}
                         send_message(chat_id, "آیدی عددی کاربر را ارسال کنید:\n(برای انصراف بنویس «لغو»)")
+
+                    elif step.get("step") == "ask_discount_code":
+                        code = text.strip().upper()
+                        if not code or " " in code:
+                            send_message(chat_id, "نام کد نامعتبر است. بدون فاصله وارد کنید:")
+                        elif code_exists(code):
+                            send_message(chat_id, "این کد از قبل وجود دارد. نام دیگری وارد کنید:")
+                        else:
+                            admin_steps[str(chat_id)] = {"step": "ask_discount_percent", "code": code}
+                            send_message(chat_id, "چند درصد تخفیف اعمال شود؟ (عددی بین ۱ تا ۹۹)")
+
+                    elif step.get("step") == "ask_discount_percent":
+                        try:
+                            percent = int(text)
+                            if not (1 <= percent <= 99):
+                                send_message(chat_id, "درصد باید بین ۱ تا ۹۹ باشد.")
+                            else:
+                                admin_steps[str(chat_id)] = {
+                                    "step": "ask_discount_max_uses",
+                                    "code": step["code"],
+                                    "percent": percent,
+                                }
+                                send_message(chat_id, "این کد حداکثر چند بار قابل استفاده باشد؟ (عدد وارد کنید)")
+                        except ValueError:
+                            send_message(chat_id, "فقط عدد وارد کنید.")
+
+                    elif step.get("step") == "ask_discount_max_uses":
+                        try:
+                            max_uses = int(text)
+                            if max_uses <= 0:
+                                send_message(chat_id, "عددی بزرگ‌تر از صفر وارد کنید.")
+                            else:
+                                code = step["code"]
+                                percent = step["percent"]
+                                create_discount_code(code, percent, max_uses)
+                                admin_steps[str(chat_id)] = {}
+                                send_message(
+                                    chat_id,
+                                    f"✅ کد تخفیف ساخته شد.\n🎟 کد: {code}\n💯 درصد: {percent}٪\n🔁 حداکثر استفاده: {max_uses} بار",
+                                )
+                                main_menu(chat_id)
+                        except ValueError:
+                            send_message(chat_id, "فقط عدد وارد کنید.")
 
                     elif step.get("step") == "ask_id":
                         try:
@@ -312,3 +476,4 @@ while True:
     except Exception as loop_error:
         print("خطای غیرمنتظره در حلقه اصلی:", loop_error)
         time.sleep(2)
+    

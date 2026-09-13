@@ -11,7 +11,7 @@ CONFIG_API = os.getenv("CONFIG_API", "https://su.randomatic.ir/api/v1/configs")
 CONFIG_KEY = os.getenv("CONFIG_KEY", "sk_live_azIaKWpOvQDoD2-7vX8-yyf3WNPg6U1p")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "48198481"))
 CARD_NUMBER = os.getenv("CARD_NUMBER", "6219861957006504")
-CARD_OWNER = os.getenv("CARD_OWNER", "کمالزاده")
+CARD_OWNER = os.getenv("CARD_OWNER", "رهام کمالزاده")
 MIN_TOPUP = int(os.getenv("MIN_TOPUP", "10000"))
 
 # ---------------------------------------------------------------------------
@@ -23,9 +23,9 @@ MIN_TOPUP = int(os.getenv("MIN_TOPUP", "10000"))
 #   wireguard -> فقط وایرگارد؛ در این حالت بدنه‌ی sub_url خودِ کانفیگ
 #                وایرگارده و ساب‌لینک واقعی وجود نداره
 #   openvpn   -> فعلاً غیرفعاله و با proto_unavailable رد می‌شه (استفاده نشه)
-PRICE_PER_GB_WIREGUARD = int(os.getenv("PRICE_PER_GB_WIREGUARD", "3500"))
-PRICE_PER_GB_CONFIG = int(os.getenv("PRICE_PER_GB_CONFIG", "3500"))
-PRICE_PER_GB_BOTH = int(os.getenv("PRICE_PER_GB_BOTH", "5500"))
+PRICE_PER_GB_WIREGUARD = int(os.getenv("PRICE_PER_GB_WIREGUARD", "4000"))
+PRICE_PER_GB_CONFIG = int(os.getenv("PRICE_PER_GB_CONFIG", "4000"))
+PRICE_PER_GB_BOTH = int(os.getenv("PRICE_PER_GB_BOTH", "6000"))
 
 CONFIG_TYPES = {
     'wireguard': {'label': '🔒 فقط وایرگارد', 'proto': 'wireguard', 'price_per_gb': PRICE_PER_GB_WIREGUARD},

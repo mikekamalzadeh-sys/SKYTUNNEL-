@@ -1,3 +1,4 @@
 requests
 turso-serverless
 flask
+qrcode[pil]
